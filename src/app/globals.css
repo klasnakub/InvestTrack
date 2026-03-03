@@ -1,26 +1,46 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-primary: var(--color-primary-base);
+  --color-secondary: var(--color-secondary-base);
+  --color-accent: var(--color-accent-base);
+  --color-danger: var(--color-danger-base);
+  --color-bg-main: var(--color-bg-main-base);
+  --color-bg-subtle: var(--color-bg-subtle-base);
+  --color-border-subtle: var(--color-border-subtle-base);
+  
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-manrope);
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --color-primary-base: #1f2937;
+  --color-secondary-base: #6b7280;
+  --color-accent-base: #10b981;
+  --color-danger-base: #ef4444;
+  --color-bg-main-base: #ffffff;
+  --color-bg-subtle-base: #f9fafb;
+  --color-border-subtle-base: #e5e7eb;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  --color-primary-base: #ffffff;
+  --color-secondary-base: #9ca3af;
+  --color-accent-base: #36e27b;
+  --color-danger-base: #f87171;
+  --color-bg-main-base: #0c120f;
+  --color-bg-subtle-base: #131c16;
+  --color-border-subtle-base: rgba(255, 255, 255, 0.05);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }
