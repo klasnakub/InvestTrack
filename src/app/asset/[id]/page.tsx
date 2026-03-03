@@ -1,20 +1,30 @@
 "use client";
 
 import { usePortfolio } from "@/store/PortfolioContext";
-import { computePortStats, fmt, fmtPct, txIcons, txLabels, uid } from "@/lib/utils";
+import { computePortStats, fmt, fmtPct, txIcons, txLabels, uid, today } from "@/lib/utils";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { use, useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function AssetDetail() {
     const router = useRouter();
     const params = useParams();
     const resolvedParams = Array.isArray(params.id) ? params.id[0] : params.id;
 
-    const { portfolios, transactions, removeTransaction, assets, addAsset, removeAsset, updateAssetPrice } = usePortfolio();
+    const { portfolios, transactions, removeTransaction, addTransaction, assets, addAsset, removeAsset, updateAssetPrice } = usePortfolio();
 
     const [isAddingAsset, setIsAddingAsset] = useState(false);
     const [assetForm, setAssetForm] = useState({ symbol: "", name: "", category: "", price: "", units: "", costBasis: "" });
+
+    // Modal state
+    const [txModalParams, setTxModalParams] = useState<{ isOpen: boolean; type: "deposit" | "withdraw" }>({ isOpen: false, type: "deposit" });
+    const [txAmount, setTxAmount] = useState("");
+    const [txDate, setTxDate] = useState("");
+    const [txNote, setTxNote] = useState("");
+
+    useEffect(() => {
+        setTxDate(today());
+    }, []);
 
     const portfolio = portfolios.find(p => p.id === resolvedParams);
     if (!portfolio) {
@@ -49,6 +59,44 @@ export default function AssetDetail() {
         });
         setAssetForm({ symbol: "", name: "", category: "", price: "", units: "", costBasis: "" });
         setIsAddingAsset(false);
+    };
+
+    const handleTxSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const amount = parseFloat(txAmount);
+        if (!amount || amount <= 0) return alert("Please enter a valid amount");
+
+        let units = 0;
+        let currentValue = stats.currentValue;
+
+        if (txModalParams.type === "deposit") {
+            units = stats.navPerUnit > 0 ? amount / stats.navPerUnit : 0;
+            currentValue += amount;
+        } else {
+            units = stats.navPerUnit > 0 ? amount / stats.navPerUnit : 0;
+            if (amount > stats.cashBalance) {
+                if (!window.confirm(`You are withdrawing more cash than your available balance (฿${fmt(stats.cashBalance)}). Proceed anyway?`)) {
+                    return;
+                }
+            }
+            currentValue -= amount;
+        }
+
+        addTransaction({
+            id: uid(),
+            portfolioId: portfolio.id,
+            type: txModalParams.type,
+            amount: amount,
+            units: units,
+            currentValue: currentValue,
+            note: txNote,
+            date: txDate,
+            createdAt: Date.now()
+        });
+
+        setTxModalParams({ ...txModalParams, isOpen: false });
+        setTxAmount("");
+        setTxNote("");
     };
 
     return (
@@ -87,6 +135,14 @@ export default function AssetDetail() {
                                 </span>
                             </div>
                         )}
+                        <div className="flex gap-4 mt-6">
+                            <button onClick={() => setTxModalParams({ isOpen: true, type: "deposit" })} className="flex items-center gap-2 px-6 py-2.5 bg-accent text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity shadow-sm shadow-[rgba(16,185,129,0.2)]">
+                                <span className="material-symbols-outlined text-lg">add_circle</span> Deposit
+                            </button>
+                            <button onClick={() => setTxModalParams({ isOpen: true, type: "withdraw" })} className="flex items-center gap-2 px-6 py-2.5 bg-bg-main border border-border-subtle text-primary rounded-lg text-sm font-medium hover:bg-bg-subtle transition-colors shadow-sm">
+                                <span className="material-symbols-outlined text-lg">remove_circle</span> Withdraw
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -208,6 +264,105 @@ export default function AssetDetail() {
                     </div>
                 </div>
             </div>
+
+            {/* Custom Modal for Deposit/Withdraw */}
+            {txModalParams.isOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    {/* Backdrop */}
+                    <div
+                        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+                        onClick={() => setTxModalParams({ ...txModalParams, isOpen: false })}
+                    ></div>
+
+                    {/* Modal Content */}
+                    <div className="relative w-full max-w-md bg-bg-main border border-border-subtle rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="px-6 py-5 border-b border-border-subtle flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${txModalParams.type === 'deposit' ? 'bg-[rgba(16,185,129,0.1)] text-accent' : 'bg-[rgba(239,68,68,0.1)] text-danger'}`}>
+                                    <span className="material-symbols-outlined">
+                                        {txModalParams.type === 'deposit' ? 'account_balance' : 'money_off'}
+                                    </span>
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-medium text-primary capitalize">{txModalParams.type} Funds</h3>
+                                    <p className="text-xs text-secondary mt-0.5">{portfolio.name}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setTxModalParams({ ...txModalParams, isOpen: false })}
+                                className="text-secondary hover:text-primary transition-colors cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+
+                        {/* Form */}
+                        <form onSubmit={handleTxSubmit} className="p-6 space-y-6">
+                            <div>
+                                <label className="text-xs font-semibold text-secondary uppercase tracking-widest mb-2 block">Amount (฿)</label>
+                                <div className="relative">
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-primary text-xl font-light">฿</span>
+                                    <input
+                                        type="number"
+                                        required
+                                        step="0.01"
+                                        min="0.01"
+                                        value={txAmount}
+                                        onChange={e => setTxAmount(e.target.value)}
+                                        className="w-full bg-bg-subtle border border-border-subtle rounded-xl pl-10 pr-4 py-3 text-lg font-medium text-primary focus:outline-none focus:ring-2 focus:ring-accent transition-shadow"
+                                        placeholder="0.00"
+                                        autoFocus
+                                    />
+                                </div>
+                                {txModalParams.type === 'deposit' ? (
+                                    <p className="text-xs text-secondary mt-2 flex items-center gap-1">
+                                        <span className="material-symbols-outlined text-[14px]">info</span>
+                                        Est. Units: ~{txAmount ? fmt(parseFloat(txAmount) / stats.navPerUnit) : '0.00'}
+                                    </p>
+                                ) : (
+                                    <p className="text-xs text-secondary mt-2 flex items-center gap-1">
+                                        <span className="material-symbols-outlined text-[14px]">account_balance_wallet</span>
+                                        Available Cash: ฿{fmt(stats.cashBalance)}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-semibold text-secondary uppercase tracking-widest mb-2 block">Date</label>
+                                    <input
+                                        type="date"
+                                        required
+                                        value={txDate}
+                                        onChange={e => setTxDate(e.target.value)}
+                                        className="w-full bg-bg-subtle border border-border-subtle rounded-xl px-4 py-2 text-sm text-primary focus:outline-none focus:ring-2 focus:ring-accent transition-shadow"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-semibold text-secondary uppercase tracking-widest mb-2 block">Note (Optional)</label>
+                                    <input
+                                        type="text"
+                                        value={txNote}
+                                        onChange={e => setTxNote(e.target.value)}
+                                        className="w-full bg-bg-subtle border border-border-subtle rounded-xl px-4 py-2 text-sm text-primary focus:outline-none focus:ring-2 focus:ring-accent transition-shadow"
+                                        placeholder="E.g. Monthly top-up"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="pt-2">
+                                <button
+                                    type="submit"
+                                    className={`w-full py-3 rounded-xl text-sm font-medium text-white transition-opacity ${txModalParams.type === 'deposit' ? 'bg-accent hover:bg-opacity-90' : 'bg-danger hover:bg-opacity-90'}`}
+                                >
+                                    Confirm {txModalParams.type}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
