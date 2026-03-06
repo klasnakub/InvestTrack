@@ -5,16 +5,13 @@ import { computePortStats, fmt, fmtPct } from "@/lib/utils";
 import Link from "next/link";
 
 export default function Dashboard() {
-  const { portfolios, transactions, assets } = usePortfolio();
+  const { portfolios, transactions, assets, resetData } = usePortfolio();
 
   const portStats = portfolios.map(p => ({ ...p, ...computePortStats(p.id, transactions, assets) }));
   const totalNAV = portStats.reduce((s, p) => s + p.currentValue, 0);
   const totalCost = portStats.reduce((s, p) => s + p.costBasis, 0);
   const totalGain = totalNAV - totalCost;
   const totalGainPct = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
-
-  const aggTotalUnits = portStats.reduce((s, p) => s + p.totalUnits, 0);
-  const aggNavPerUnit = aggTotalUnits > 0 ? totalNAV / aggTotalUnits : 10;
 
   const portIcons: Record<string, string> = {
     th_stock: "trending_up",
@@ -38,16 +35,7 @@ export default function Dashboard() {
               </span>
             </h1>
 
-            <div className="flex gap-4 mt-3 text-sm flex-wrap">
-              <div className="bg-bg-subtle px-3 py-1.5 rounded border border-border-subtle text-secondary">
-                Total Units: <span className="text-primary font-medium">{fmt(aggTotalUnits)}</span>
-              </div>
-              <div className="bg-bg-subtle px-3 py-1.5 rounded border border-border-subtle text-secondary">
-                Overall NAV: <span className="text-primary font-medium">฿{fmt(aggNavPerUnit)}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 mt-4">
+            <div className="flex items-center gap-3 mt-6">
               <span className={`text-sm font-medium px-2 py-0.5 rounded flex items-center gap-1 ${totalGain >= 0 ? "text-accent bg-[rgba(16,185,129,0.1)]" : "text-danger bg-[rgba(239,68,68,0.1)]"}`}>
                 <span className="material-symbols-outlined text-sm">
                   {totalGain >= 0 ? "arrow_upward" : "arrow_downward"}
@@ -185,6 +173,14 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Reset Data Button */}
+      <div className="mt-16 pt-8 border-t border-border-subtle flex justify-end">
+        <button onClick={resetData} className="text-secondary hover:text-danger text-sm flex items-center gap-2 transition-colors">
+          <span className="material-symbols-outlined text-[16px]">delete_forever</span>
+          Reset All Data
+        </button>
       </div>
     </div>
   );

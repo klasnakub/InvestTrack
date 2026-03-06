@@ -32,8 +32,8 @@ export function computePortStats(portfolioId: string, txs: Transaction[], assets
     const costBasis = cashBasis;
 
     const gain = currentValue - costBasis;
-    const gainPct = costBasis > 0 ? (gain / costBasis) * 100 : 0;
     const navPerUnit = totalUnits > 0 ? currentValue / totalUnits : 10;
+    const gainPct = ((navPerUnit - 10) / 10) * 100;
 
     return {
         currentValue,

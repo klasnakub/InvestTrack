@@ -44,8 +44,10 @@ interface PortfolioContextType {
     addTransaction: (tx: Transaction) => void;
     removeTransaction: (id: string) => void;
     addAsset: (asset: Asset) => void;
+    updateAsset: (asset: Asset) => void;
     removeAsset: (id: string) => void;
     updateAssetPrice: (id: string, price: number) => void;
+    resetData: () => void;
 }
 
 const STORAGE_KEYS = { portfolios: "port-portfolios", transactions: "port-transactions", assets: "port-assets" };
@@ -104,15 +106,25 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     const removeTransaction = useCallback((id: string) => persistTransactions(transactions.filter(t => t.id !== id)), [transactions, persistTransactions]);
 
     const addAsset = useCallback((asset: Asset) => persistAssets([...assets, asset]), [assets, persistAssets]);
+    const updateAsset = useCallback((asset: Asset) => persistAssets(assets.map(a => a.id === asset.id ? asset : a)), [assets, persistAssets]);
     const removeAsset = useCallback((id: string) => persistAssets(assets.filter(a => a.id !== id)), [assets, persistAssets]);
     const updateAssetPrice = useCallback((id: string, price: number) => {
         persistAssets(assets.map(a => a.id === id ? { ...a, price } : a));
     }, [assets, persistAssets]);
 
+    const resetData = useCallback(() => {
+        if (window.confirm("Are you sure you want to delete all portfolios, assets, and transactions? This cannot be undone.")) {
+            localStorage.removeItem(STORAGE_KEYS.portfolios);
+            localStorage.removeItem(STORAGE_KEYS.transactions);
+            localStorage.removeItem(STORAGE_KEYS.assets);
+            window.location.reload();
+        }
+    }, []);
+
     if (!mounted) return <div className="min-h-screen flex items-center justify-center text-secondary">Loading...</div>;
 
     return (
-        <PortfolioContext.Provider value={{ portfolios, transactions, assets, addPortfolio, removePortfolio, addTransaction, removeTransaction, addAsset, removeAsset, updateAssetPrice }}>
+        <PortfolioContext.Provider value={{ portfolios, transactions, assets, addPortfolio, removePortfolio, addTransaction, removeTransaction, addAsset, updateAsset, removeAsset, updateAssetPrice, resetData }}>
             {children}
         </PortfolioContext.Provider>
     );
