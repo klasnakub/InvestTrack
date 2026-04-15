@@ -175,13 +175,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Reset Data Button */}
-      <div className="mt-16 pt-8 border-t border-border-subtle flex justify-end">
-        <button onClick={resetData} className="text-secondary hover:text-danger text-sm flex items-center gap-2 transition-colors">
-          <span className="material-symbols-outlined text-[16px]">delete_forever</span>
-          Reset All Data
-        </button>
-      </div>
+
     </div>
   );
 }

@@ -399,12 +399,7 @@ export default function AssetDetail() {
                                     {t.units ? <p className="text-xs text-accent mt-0.5">{t.type === 'deposit' ? '+' : '-'}{fmt(t.units)} Units</p> : null}
                                     {t.note && <p className="text-secondary text-xs mt-2 italic">"{t.note}"</p>}
 
-                                    <button
-                                        onClick={() => { if (window.confirm('Delete transaction?')) removeTransaction(t.id) }}
-                                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-danger text-xs hover:underline"
-                                    >
-                                        Delete
-                                    </button>
+
                                 </div>
                             );
                         })}
