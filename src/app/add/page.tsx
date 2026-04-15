@@ -32,7 +32,6 @@ export default function AddTransactionPage() {
         if (!valField || valField <= 0) return alert("Please enter a valid amount");
 
         addTransaction({
-            id: uid(),
             portfolioId: txForm.portfolioId,
             type: txForm.type as any,
             amount: parseFloat(txForm.amount) || 0,
@@ -40,7 +39,6 @@ export default function AddTransactionPage() {
             units: computedUnits > 0 ? computedUnits : undefined,
             note: txForm.note,
             date: txForm.date,
-            createdAt: Date.now(),
         });
         router.push("/");
     }
@@ -48,7 +46,7 @@ export default function AddTransactionPage() {
     function submitPort(e: React.FormEvent) {
         e.preventDefault();
         if (!newPort.name.trim()) return alert("Please enter a portfolio name");
-        addPortfolio({ id: uid(), name: newPort.name.trim(), type: newPort.type, createdAt: Date.now() });
+        addPortfolio(newPort.name.trim(), newPort.type);
         setNewPort({ name: "", type: "th_stock" });
         alert("Portfolio added successfully");
     }

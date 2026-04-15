@@ -75,7 +75,6 @@ export default function AssetDetail() {
         }
 
         addAsset({
-            id: uid(),
             portfolioId: portfolio.id,
             symbol: symbol,
             name: assetForm.name || symbol,
@@ -83,11 +82,9 @@ export default function AssetDetail() {
             price: currentPrice,
             units: units,
             costBasis: costBasis,
-            createdAt: Date.now()
         });
 
         addTransaction({
-            id: uid(),
             portfolioId: portfolio.id,
             type: "buy",
             amount: costBasis,
@@ -95,7 +92,6 @@ export default function AssetDetail() {
             currentValue: stats.currentValue,
             note: `Bought ${fmt(units)} units of ${symbol}`,
             date: today(),
-            createdAt: Date.now()
         });
 
         setAssetForm({ symbol: "", name: "", category: "", currentPrice: "", costPrice: "", units: "" });
@@ -127,7 +123,6 @@ export default function AssetDetail() {
         }
 
         addTransaction({
-            id: uid(),
             portfolioId: portfolio.id,
             type: txModalParams.type,
             amount: amount,
@@ -135,7 +130,6 @@ export default function AssetDetail() {
             currentValue: currentValue,
             note: txNote,
             date: txDate,
-            createdAt: Date.now()
         });
 
         setTxModalParams({ ...txModalParams, isOpen: false });
@@ -169,7 +163,6 @@ export default function AssetDetail() {
             newCostBasis += totalValue;
 
             addTransaction({
-                id: uid(),
                 portfolioId: portfolio.id,
                 type: "buy",
                 amount: totalValue,
@@ -177,7 +170,6 @@ export default function AssetDetail() {
                 currentValue: stats.currentValue,
                 note: `Bought ${fmt(units)} units of ${asset.symbol} @ ฿${fmt(price)}`,
                 date: assetTxDate,
-                createdAt: Date.now()
             });
             updateAsset({ ...asset, units: newUnits, costBasis: newCostBasis, price });
         } else {
@@ -191,7 +183,6 @@ export default function AssetDetail() {
             newCostBasis -= costBasisReduction;
 
             addTransaction({
-                id: uid(),
                 portfolioId: portfolio.id,
                 type: "sell",
                 amount: totalValue,
@@ -199,7 +190,6 @@ export default function AssetDetail() {
                 currentValue: stats.currentValue,
                 note: `Sold ${fmt(units)} units of ${asset.symbol} @ ฿${fmt(price)}`,
                 date: assetTxDate,
-                createdAt: Date.now()
             });
 
             if (newUnits <= 0) {
@@ -226,14 +216,12 @@ export default function AssetDetail() {
 
         updateAsset({ ...asset, price });
         addTransaction({
-            id: uid(),
             portfolioId: portfolio.id,
             type: "nav_update",
             amount: 0,
             currentValue: newTotalValue,
             note: `Updated price of ${asset.symbol} to ฿${fmt(price)}`,
             date: priceUpdateDate,
-            createdAt: Date.now()
         });
 
         setPriceUpdateParams({ isOpen: false, asset: null });

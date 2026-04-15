@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import * as actions from "@/lib/actions";
 
 export type PortfolioType = "th_stock" | "foreign_stock" | "fund" | "gold";
 
@@ -39,25 +40,16 @@ interface PortfolioContextType {
     portfolios: Portfolio[];
     transactions: Transaction[];
     assets: Asset[];
-    addPortfolio: (port: Portfolio) => void;
-    removePortfolio: (id: string) => void;
-    addTransaction: (tx: Transaction) => void;
-    removeTransaction: (id: string) => void;
-    addAsset: (asset: Asset) => void;
-    updateAsset: (asset: Asset) => void;
-    removeAsset: (id: string) => void;
-    updateAssetPrice: (id: string, price: number) => void;
-    resetData: () => void;
+    addPortfolio: (name: string, type: PortfolioType) => Promise<void>;
+    removePortfolio: (id: string) => Promise<void>;
+    addTransaction: (tx: Omit<Transaction, "id" | "createdAt">) => Promise<void>;
+    removeTransaction: (id: string) => Promise<void>;
+    addAsset: (asset: Omit<Asset, "id" | "createdAt">) => Promise<void>;
+    updateAsset: (asset: Asset) => Promise<void>;
+    removeAsset: (id: string) => Promise<void>;
+    updateAssetPrice: (id: string, price: number) => Promise<void>;
+    resetData: () => Promise<void>;
 }
-
-const STORAGE_KEYS = { portfolios: "port-portfolios", transactions: "port-transactions", assets: "port-assets" };
-
-const DEFAULT_PORTFOLIOS: Portfolio[] = [
-    { id: "p1", name: "Thai Stocks", type: "th_stock", createdAt: Date.now() },
-    { id: "p2", name: "Foreign Stocks", type: "foreign_stock", createdAt: Date.now() },
-    { id: "p3", name: "Mutual Funds", type: "fund", createdAt: Date.now() },
-    { id: "p4", name: "Gold", type: "gold", createdAt: Date.now() },
-];
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
 
@@ -68,63 +60,84 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
-        try {
-            const p = localStorage.getItem(STORAGE_KEYS.portfolios);
-            const t = localStorage.getItem(STORAGE_KEYS.transactions);
-            const a = localStorage.getItem(STORAGE_KEYS.assets);
-            setPortfolios(p ? JSON.parse(p) : DEFAULT_PORTFOLIOS);
-            setTransactions(t ? JSON.parse(t) : []);
-            setAssets(a ? JSON.parse(a) : []);
-        } catch {
-            setPortfolios(DEFAULT_PORTFOLIOS);
-        }
-        setMounted(true);
+        const loadData = async () => {
+            const data = await actions.getInitialData();
+            setPortfolios(data.portfolios);
+            setTransactions(data.transactions);
+            setAssets(data.assets);
+            setMounted(true);
+        };
+        loadData();
     }, []);
 
-    const persistPortfolios = useCallback((p: Portfolio[]) => {
-        setPortfolios(p);
-        localStorage.setItem(STORAGE_KEYS.portfolios, JSON.stringify(p));
+    const addPortfolio = useCallback(async (name: string, type: PortfolioType) => {
+        const newPort = await actions.addPortfolioDb(name, type);
+        setPortfolios(prev => [...prev, newPort]);
     }, []);
 
-    const persistTransactions = useCallback((t: Transaction[]) => {
-        setTransactions(t);
-        localStorage.setItem(STORAGE_KEYS.transactions, JSON.stringify(t));
+    const removePortfolio = useCallback(async (id: string) => {
+        await actions.removePortfolioDb(id);
+        setPortfolios(prev => prev.filter(p => p.id !== id));
+        setTransactions(prev => prev.filter(t => t.portfolioId !== id));
+        setAssets(prev => prev.filter(a => a.portfolioId !== id));
     }, []);
 
-    const persistAssets = useCallback((a: Asset[]) => {
-        setAssets(a);
-        localStorage.setItem(STORAGE_KEYS.assets, JSON.stringify(a));
+    const addTransaction = useCallback(async (tx: Omit<Transaction, "id" | "createdAt">) => {
+        const newTx = await actions.addTransactionDb(tx);
+        setTransactions(prev => [newTx, ...prev]);
     }, []);
 
-    const addPortfolio = useCallback((port: Portfolio) => persistPortfolios([...portfolios, port]), [portfolios, persistPortfolios]);
-    const removePortfolio = useCallback((id: string) => {
-        persistPortfolios(portfolios.filter(p => p.id !== id));
-        persistTransactions(transactions.filter(t => t.portfolioId !== id));
-    }, [portfolios, transactions, persistPortfolios, persistTransactions]);
+    const removeTransaction = useCallback(async (id: string) => {
+        await actions.removeTransactionDb(id);
+        setTransactions(prev => prev.filter(t => t.id !== id));
+    }, []);
 
-    const addTransaction = useCallback((tx: Transaction) => persistTransactions([tx, ...transactions]), [transactions, persistTransactions]);
-    const removeTransaction = useCallback((id: string) => persistTransactions(transactions.filter(t => t.id !== id)), [transactions, persistTransactions]);
+    const addAsset = useCallback(async (asset: Omit<Asset, "id" | "createdAt">) => {
+        const newAsset = await actions.addAssetDb(asset);
+        setAssets(prev => [...prev, newAsset]);
+    }, []);
 
-    const addAsset = useCallback((asset: Asset) => persistAssets([...assets, asset]), [assets, persistAssets]);
-    const updateAsset = useCallback((asset: Asset) => persistAssets(assets.map(a => a.id === asset.id ? asset : a)), [assets, persistAssets]);
-    const removeAsset = useCallback((id: string) => persistAssets(assets.filter(a => a.id !== id)), [assets, persistAssets]);
-    const updateAssetPrice = useCallback((id: string, price: number) => {
-        persistAssets(assets.map(a => a.id === id ? { ...a, price } : a));
-    }, [assets, persistAssets]);
+    const updateAsset = useCallback(async (asset: Asset) => {
+        await actions.updateAssetDb(asset);
+        setAssets(prev => prev.map(a => a.id === asset.id ? asset : a));
+    }, []);
 
-    const resetData = useCallback(() => {
-        if (window.confirm("Are you sure you want to delete all portfolios, assets, and transactions? This cannot be undone.")) {
-            localStorage.removeItem(STORAGE_KEYS.portfolios);
-            localStorage.removeItem(STORAGE_KEYS.transactions);
-            localStorage.removeItem(STORAGE_KEYS.assets);
-            window.location.reload();
+    const removeAsset = useCallback(async (id: string) => {
+        await actions.removeAssetDb(id);
+        setAssets(prev => prev.filter(a => a.id !== id));
+    }, []);
+
+    const updateAssetPrice = useCallback(async (id: string, price: number) => {
+        await actions.updateAssetPriceDb(id, price);
+        setAssets(prev => prev.map(a => a.id === id ? { ...a, price } : a));
+    }, []);
+
+    const resetData = useCallback(async () => {
+        if (window.confirm("Are you sure you want to delete all portfolios, assets, and transactions from the database? This cannot be undone.")) {
+            await actions.resetAllDataDb();
+            setPortfolios([]);
+            setTransactions([]);
+            setAssets([]);
         }
     }, []);
 
     if (!mounted) return <div className="min-h-screen flex items-center justify-center text-secondary">Loading...</div>;
 
     return (
-        <PortfolioContext.Provider value={{ portfolios, transactions, assets, addPortfolio, removePortfolio, addTransaction, removeTransaction, addAsset, updateAsset, removeAsset, updateAssetPrice, resetData }}>
+        <PortfolioContext.Provider value={{ 
+            portfolios, 
+            transactions, 
+            assets, 
+            addPortfolio, 
+            removePortfolio, 
+            addTransaction, 
+            removeTransaction, 
+            addAsset, 
+            updateAsset, 
+            removeAsset, 
+            updateAssetPrice, 
+            resetData 
+        }}>
             {children}
         </PortfolioContext.Provider>
     );
