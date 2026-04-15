@@ -90,7 +90,7 @@ export default function Dashboard() {
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-display font-medium text-primary">Portfolio Breakdown</h2>
             <Link href="/add" className="text-sm font-medium text-bg-main bg-primary px-3 py-1.5 rounded-md hover:opacity-80">
-              Manage / Add
+              Manage
             </Link>
           </div>
           <div className="space-y-1">
