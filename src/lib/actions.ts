@@ -14,6 +14,7 @@ export async function getInitialData() {
       portfolios: portfoliosRaw.map(p => ({
         ...p,
         createdAt: new Date(p.created_at).getTime(),
+        currentExchangeRate: p.current_exchange_rate ? Number(p.current_exchange_rate) : undefined,
       })) as Portfolio[],
       assets: assetsRaw.map(a => ({
         ...a,
@@ -31,6 +32,7 @@ export async function getInitialData() {
         units: t.units ? Number(t.units) : undefined,
         assetId: t.asset_id,
         pricePerUnit: t.price_per_unit ? Number(t.price_per_unit) : undefined,
+        exchangeRate: t.exchange_rate ? Number(t.exchange_rate) : undefined,
         currentValue: Number(t.current_value),
         date: new Date(t.date).toISOString().split('T')[0],
       })) as Transaction[],
@@ -44,14 +46,23 @@ export async function getInitialData() {
 // Portfolio Actions
 export async function addPortfolioDb(name: string, type: string) {
   const [result] = await sql`
-    INSERT INTO portfolios (name, type) 
-    VALUES (${name}, ${type}) 
-    RETURNING id, name, type, created_at
+    INSERT INTO portfolios (name, type, current_exchange_rate) 
+    VALUES (${name}, ${type}, 1.0) 
+    RETURNING id, name, type, current_exchange_rate, created_at
   `;
   return {
     ...result,
     createdAt: new Date(result.created_at).getTime(),
+    currentExchangeRate: Number(result.current_exchange_rate),
   } as Portfolio;
+}
+
+export async function updatePortfolioDb(portfolio: Portfolio) {
+  await sql`
+    UPDATE portfolios 
+    SET name = ${portfolio.name}, type = ${portfolio.type}, current_exchange_rate = ${portfolio.currentExchangeRate}
+    WHERE id = ${portfolio.id}
+  `;
 }
 
 export async function removePortfolioDb(id: string) {
@@ -61,15 +72,17 @@ export async function removePortfolioDb(id: string) {
 // Transaction Actions
 export async function addTransactionDb(tx: Omit<Transaction, "id" | "createdAt" | "portfolioId"> & { portfolioId: string }) {
   const [result] = await sql`
-    INSERT INTO transactions (portfolio_id, asset_id, type, amount, units, price_per_unit, current_value, note, date)
-    VALUES (${tx.portfolioId}, ${tx.assetId}, ${tx.type}, ${tx.amount}, ${tx.units}, ${tx.pricePerUnit}, ${tx.currentValue}, ${tx.note}, ${tx.date})
-    RETURNING id, portfolio_id as "portfolioId", asset_id as "assetId", type, amount, units, price_per_unit as "pricePerUnit", current_value as "currentValue", note, date, created_at as "createdAt"
+    INSERT INTO transactions (portfolio_id, asset_id, type, amount, units, price_per_unit, exchange_rate, current_value, note, date)
+    VALUES (${tx.portfolioId}, ${tx.assetId}, ${tx.type}, ${tx.amount}, ${tx.units}, ${tx.pricePerUnit}, ${tx.exchangeRate}, ${tx.currentValue}, ${tx.note}, ${tx.date})
+    RETURNING id, portfolio_id as "portfolioId", asset_id as "assetId", type, amount, units, price_per_unit as "pricePerUnit", exchange_rate as "exchangeRate", current_value as "currentValue", note, date, created_at as "createdAt"
   `;
   return {
     ...result,
     createdAt: new Date(result.createdAt).getTime(),
     amount: Number(result.amount),
     units: result.units ? Number(result.units) : undefined,
+    pricePerUnit: result.pricePerUnit ? Number(result.pricePerUnit) : undefined,
+    exchangeRate: result.exchangeRate ? Number(result.exchangeRate) : undefined,
     currentValue: Number(result.currentValue),
     date: new Date(result.date).toISOString().split('T')[0],
   } as Transaction;

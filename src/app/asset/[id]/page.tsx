@@ -11,10 +11,11 @@ export default function AssetDetail() {
     const params = useParams();
     const resolvedParams = Array.isArray(params.id) ? params.id[0] : params.id;
 
-    const { portfolios, transactions, removeTransaction, addTransaction, assets, addAsset, updateAsset, removeAsset } = usePortfolio();
+    const { portfolios, transactions, removeTransaction, addTransaction, assets, addAsset, updateAsset, removeAsset, updatePortfolio } = usePortfolio();
 
     const [isAddingAsset, setIsAddingAsset] = useState(false);
-    const [assetForm, setAssetForm] = useState({ symbol: "", name: "", category: "", currentPrice: "", costPrice: "", units: "" });
+    const [assetForm, setAssetForm] = useState({ symbol: "", name: "", category: "", currentPrice: "", costPrice: "", units: "", exchangeRate: "" });
+    const [currentFxRate, setCurrentFxRate] = useState("35.00");
 
     // Modal state
     const [txModalParams, setTxModalParams] = useState<{ isOpen: boolean; type: "deposit" | "withdraw" }>({ isOpen: false, type: "deposit" });
@@ -27,19 +28,29 @@ export default function AssetDetail() {
     const [assetTxParams, setAssetTxParams] = useState<{ isOpen: boolean; type: "buy" | "sell"; asset: typeof assets[0] | null }>({ isOpen: false, type: "buy", asset: null });
     const [assetTxUnits, setAssetTxUnits] = useState("");
     const [assetTxPrice, setAssetTxPrice] = useState("");
+    const [assetTxExchangeRate, setAssetTxExchangeRate] = useState("");
     const [assetTxDate, setAssetTxDate] = useState("");
 
     const [priceUpdateParams, setPriceUpdateParams] = useState<{ isOpen: boolean; asset: typeof assets[0] | null }>({ isOpen: false, asset: null });
     const [newPriceInput, setNewPriceInput] = useState("");
     const [priceUpdateDate, setPriceUpdateDate] = useState("");
 
+    const portfolio = portfolios.find(p => p.id === resolvedParams);
+
     useEffect(() => {
         setTxDate(today());
         setAssetTxDate(today());
         setPriceUpdateDate(today());
-    }, []);
+        if (portfolio?.currentExchangeRate) {
+            setCurrentFxRate(portfolio.currentExchangeRate.toString());
+            setAssetForm(f => ({ ...f, exchangeRate: portfolio.currentExchangeRate!.toString() }));
+            setAssetTxExchangeRate(portfolio.currentExchangeRate!.toString());
+        } else {
+            setAssetForm(f => ({ ...f, exchangeRate: "35.00" }));
+            setAssetTxExchangeRate("35.00");
+        }
+    }, [portfolio]);
 
-    const portfolio = portfolios.find(p => p.id === resolvedParams);
     if (!portfolio) {
         return (
             <div className="flex-1 flex items-center justify-center">
@@ -51,7 +62,7 @@ export default function AssetDetail() {
         );
     }
 
-    const stats = computePortStats(portfolio.id, transactions, assets);
+    const stats = computePortStats(portfolio.id, transactions, assets, portfolio.type === 'foreign_stock' ? parseFloat(currentFxRate) : undefined);
     const portTxs = transactions
         .filter(t => t.portfolioId === portfolio.id && t.type !== "nav_update")
         .sort((a, b) => b.createdAt - a.createdAt);
@@ -61,10 +72,14 @@ export default function AssetDetail() {
         e.preventDefault();
         if (!assetForm.symbol || !assetForm.currentPrice || !assetForm.costPrice || !assetForm.units) return setErrorModal({ isOpen: true, title: "Missing Fields", message: "Please fill in all required fields." });
 
+        const isForeign = portfolio.type === "foreign_stock";
         const currentPrice = parseFloat(assetForm.currentPrice) || 0;
         const costPrice = parseFloat(assetForm.costPrice) || 0;
         const units = parseFloat(assetForm.units) || 0;
-        const totalCost = costPrice * units;
+        const exRate = isForeign ? (parseFloat(assetForm.exchangeRate) || 35) : 1;
+        
+        const totalCostUnits = costPrice * units;
+        const totalCost = totalCostUnits * exRate; // In THB
         const symbol = assetForm.symbol.toUpperCase();
 
         if (totalCost > stats.cashBalance) {
@@ -97,8 +112,9 @@ export default function AssetDetail() {
                 amount: totalCost,
                 units: units,
                 pricePerUnit: costPrice,
+                exchangeRate: isForeign ? exRate : undefined,
                 currentValue: stats.currentValue,
-                note: `Bought ${fmt(units)} units of ${symbol} (Update existing)`,
+                note: `Bought ${fmt(units)} units of ${symbol} ${isForeign ? `@ $${fmt(costPrice)} (FX: ${exRate})` : `(Update existing)`}`,
                 date: today(),
             });
         } else {
@@ -120,13 +136,14 @@ export default function AssetDetail() {
                 amount: totalCost,
                 units: units,
                 pricePerUnit: costPrice,
+                exchangeRate: isForeign ? exRate : undefined,
                 currentValue: stats.currentValue,
-                note: `Bought ${fmt(units)} units of ${symbol}`,
+                note: `Bought ${fmt(units)} units of ${symbol} ${isForeign ? `@ $${fmt(costPrice)} (FX: ${exRate})` : ""}`,
                 date: today(),
             });
         }
 
-        setAssetForm({ symbol: "", name: "", category: "", currentPrice: "", costPrice: "", units: "" });
+        setAssetForm({ symbol: "", name: "", category: "", currentPrice: "", costPrice: "", units: "", exchangeRate: isForeign ? currentFxRate : "" });
         setIsAddingAsset(false);
     };
 
@@ -176,8 +193,11 @@ export default function AssetDetail() {
         if (!units || units <= 0 || !price || price <= 0) return setErrorModal({ isOpen: true, title: "Invalid Input", message: "Please enter valid units and price greater than 0." });
         if (!assetTxParams.asset) return;
 
+        const isForeign = portfolio.type === "foreign_stock";
+        const exRate = isForeign ? (parseFloat(assetTxExchangeRate) || 35) : 1;
+        
         const asset = assetTxParams.asset;
-        const totalValue = units * price;
+        const totalValue = units * price * exRate; // In THB
 
         let newUnits = asset.units;
         let newCostBasis = asset.costBasis;
@@ -201,8 +221,9 @@ export default function AssetDetail() {
                 amount: totalValue,
                 units: units,
                 pricePerUnit: price,
+                exchangeRate: isForeign ? exRate : undefined,
                 currentValue: stats.currentValue,
-                note: `Bought ${fmt(units)} units of ${asset.symbol} @ ฿${fmt(price)}`,
+                note: `Bought ${fmt(units)} units of ${asset.symbol} @ ${isForeign ? '$' : '฿'}${fmt(price)} ${isForeign ? `(FX: ${exRate})` : ""}`,
                 date: assetTxDate,
             });
             updateAsset({ ...asset, units: newUnits, costBasis: newCostBasis, price });
@@ -223,8 +244,9 @@ export default function AssetDetail() {
                 amount: totalValue,
                 units: units,
                 pricePerUnit: price,
+                exchangeRate: isForeign ? exRate : undefined,
                 currentValue: stats.currentValue,
-                note: `Sold ${fmt(units)} units of ${asset.symbol} @ ฿${fmt(price)}`,
+                note: `Sold ${fmt(units)} units of ${asset.symbol} @ ${isForeign ? '$' : '฿'}${fmt(price)} ${isForeign ? `(FX: ${exRate})` : ""}`,
                 date: assetTxDate,
             });
 
@@ -238,6 +260,7 @@ export default function AssetDetail() {
         setAssetTxParams({ ...assetTxParams, isOpen: false });
         setAssetTxUnits("");
         setAssetTxPrice("");
+        setAssetTxExchangeRate(isForeign ? currentFxRate : "");
     };
 
     const handlePriceUpdateSubmit = (e: React.FormEvent) => {
@@ -281,13 +304,24 @@ export default function AssetDetail() {
                         <p className="text-primary text-4xl md:text-5xl font-light">
                             ฿{fmt(Math.floor(stats.currentValue))}
                             <span className="text-secondary text-2xl">.{Math.floor((stats.currentValue % 1) * 100).toString().padStart(2, '0')}</span>
+                            {portfolio.type === "foreign_stock" && (
+                                <span className="text-secondary text-xl md:text-2xl ml-3">
+                                    (${fmt(stats.currentValue / (parseFloat(currentFxRate) || 35))})
+                                </span>
+                            )}
                         </p>
                         <div className="flex gap-4 mt-3 text-sm flex-wrap justify-end">
                             <div className="bg-bg-subtle px-3 py-1.5 rounded border border-border-subtle text-secondary">
                                 Units: <span className="text-primary font-medium">{fmt(stats.totalUnits)}</span>
                             </div>
                             <div className="bg-bg-subtle px-3 py-1.5 rounded border border-border-subtle text-secondary">
-                                NAV: <span className="text-primary font-medium">฿{fmt4(stats.navPerUnit)}</span>
+                                NAV: <span className="text-primary font-medium">฿{fmt4(stats.navPerUnit)}
+                                {portfolio.type === "foreign_stock" && (
+                                    <span className="ml-1 text-[11px] opacity-70">
+                                        (${fmt4(stats.navPerUnit / (parseFloat(currentFxRate) || 35))})
+                                    </span>
+                                )}
+                                </span>
                             </div>
                             <div className="bg-bg-subtle px-3 py-1.5 rounded border border-border-subtle text-secondary">
                                 Cash: <span className="text-primary font-medium">฿{fmt(stats.cashBalance)}</span>
@@ -314,21 +348,49 @@ export default function AssetDetail() {
                 {/* Asset Class Portfolio Table */}
                 <div className="w-full mt-4">
                     <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-xl font-display font-medium text-primary">Holdings</h2>
+                        <div className="flex items-center gap-6">
+                            <h2 className="text-xl font-display font-medium text-primary">Holdings</h2>
+                            {portfolio.type === "foreign_stock" && (
+                                <div className="flex items-center gap-3 bg-bg-subtle px-3 py-1.5 rounded-lg border border-border-subtle">
+                                    <span className="text-xs font-semibold text-secondary uppercase tracking-widest">USD/THB</span>
+                                    <div className="flex items-center gap-1.5">
+                                        <input 
+                                            type="number" 
+                                            step="0.01" 
+                                            value={currentFxRate} 
+                                            onChange={(e) => {
+                                                setCurrentFxRate(e.target.value);
+                                            }}
+                                            onBlur={() => {
+                                                const rate = parseFloat(currentFxRate);
+                                                if (rate > 0) {
+                                                    updatePortfolio({ ...portfolio, currentExchangeRate: rate });
+                                                }
+                                            }}
+                                            className="w-16 bg-bg-main border border-border-subtle rounded px-1.5 py-0.5 text-sm text-primary font-medium focus:outline-none focus:ring-1 focus:ring-accent"
+                                        />
+                                        <span className="text-xs text-secondary italic">Now</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         <button onClick={() => setIsAddingAsset(!isAddingAsset)} className="text-sm font-medium text-bg-main bg-primary px-3 py-1.5 rounded-md hover:opacity-80">
                             {isAddingAsset ? "Cancel" : "+ Add Asset"}
                         </button>
                     </div>
 
                     {isAddingAsset && (
-                        <form onSubmit={handleAddAsset} className="bg-bg-subtle border border-border-subtle p-6 rounded-xl mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            <div><label className="text-xs text-secondary uppercase mb-1 block">Symbol *</label><input required value={assetForm.symbol} onChange={e => setAssetForm({ ...assetForm, symbol: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="e.g. PTT" /></div>
-                            <div><label className="text-xs text-secondary uppercase mb-1 block">Name</label><input value={assetForm.name} onChange={e => setAssetForm({ ...assetForm, name: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="e.g. PTT PCL" /></div>
-                            <div><label className="text-xs text-secondary uppercase mb-1 block">Category</label><input value={assetForm.category} onChange={e => setAssetForm({ ...assetForm, category: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="e.g. Energy" /></div>
-                            <div><label className="text-xs text-secondary uppercase mb-1 block">Cost Price (ต้นทุน) *</label><input required type="number" step="0.0001" value={assetForm.costPrice} onChange={e => setAssetForm({ ...assetForm, costPrice: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="0.0000" /></div>
-                            <div><label className="text-xs text-secondary uppercase mb-1 block">Current Price (ปัจจุบัน) *</label><input required type="number" step="0.0001" value={assetForm.currentPrice} onChange={e => setAssetForm({ ...assetForm, currentPrice: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="0.0000" /></div>
+                        <form onSubmit={handleAddAsset} className="bg-bg-subtle border border-border-subtle p-6 rounded-xl mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div><label className="text-xs text-secondary uppercase mb-1 block">Symbol *</label><input required value={assetForm.symbol} onChange={e => setAssetForm({ ...assetForm, symbol: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="e.g. AAPL" /></div>
+                            <div><label className="text-xs text-secondary uppercase mb-1 block">Name</label><input value={assetForm.name} onChange={e => setAssetForm({ ...assetForm, name: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="e.g. Apple Inc." /></div>
+                            <div><label className="text-xs text-secondary uppercase mb-1 block">Category</label><input value={assetForm.category} onChange={e => setAssetForm({ ...assetForm, category: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="e.g. Technology" /></div>
                             <div><label className="text-xs text-secondary uppercase mb-1 block">Units *</label><input required type="number" step="0.0001" value={assetForm.units} onChange={e => setAssetForm({ ...assetForm, units: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="0.0000" /></div>
-                            <div className="md:col-span-2 lg:col-span-3 flex justify-end mt-2"><button type="submit" className="bg-accent text-white px-4 py-2 rounded-md text-sm font-medium">Save Asset</button></div>
+                            <div><label className="text-xs text-secondary uppercase mb-1 block">Cost Price ({portfolio.type === 'foreign_stock' ? '$' : '฿'}) *</label><input required type="number" step="0.0001" value={assetForm.costPrice} onChange={e => setAssetForm({ ...assetForm, costPrice: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="0.0000" /></div>
+                            <div><label className="text-xs text-secondary uppercase mb-1 block">Current Price ({portfolio.type === 'foreign_stock' ? '$' : '฿'}) *</label><input required type="number" step="0.0001" value={assetForm.currentPrice} onChange={e => setAssetForm({ ...assetForm, currentPrice: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="0.0000" /></div>
+                            {portfolio.type === "foreign_stock" && (
+                                <div><label className="text-xs text-secondary uppercase mb-1 block">FX Rate (1$ = ฿) *</label><input required type="number" step="0.01" value={assetForm.exchangeRate} onChange={e => setAssetForm({ ...assetForm, exchangeRate: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="35.00" /></div>
+                            )}
+                            <div className={`md:col-span-2 ${portfolio.type === 'foreign_stock' ? 'lg:col-span-1' : 'lg:col-span-1'} flex justify-end items-end`}><button type="submit" className="w-full bg-accent text-white px-4 py-2 rounded-md text-sm font-medium h-[38px]">Save Asset</button></div>
                         </form>
                     )}
 
@@ -337,15 +399,17 @@ export default function AssetDetail() {
                             <thead>
                                 <tr className="border-b border-border-subtle">
                                     <th className="py-4 pr-4 pl-2 text-xs font-semibold tracking-widest text-secondary uppercase">Asset</th>
-                                    <th className="py-2 px-4 text-xs font-semibold tracking-widest text-secondary uppercase text-right leading-tight">Price<br /><span className="text-[10px] opacity-70 font-medium normal-case">Cost / Current</span></th>
+                                    <th className="py-2 px-4 text-xs font-semibold tracking-widest text-secondary uppercase text-right leading-tight">Price In {portfolio.type === 'foreign_stock' ? 'USD' : 'THB'}<br /><span className="text-[10px] opacity-70 font-medium normal-case">Cost / Current</span></th>
                                     <th className="py-4 px-4 text-xs font-semibold tracking-widest text-secondary uppercase text-right">Units</th>
-                                    <th className="py-4 px-4 text-xs font-semibold tracking-widest text-secondary uppercase text-right">Value</th>
-                                    <th className="py-4 px-4 text-xs font-semibold tracking-widest text-secondary uppercase text-right">Return</th>
+                                    <th className="py-4 px-4 text-xs font-semibold tracking-widest text-secondary uppercase text-right">Value (THB)</th>
+                                    <th className="py-4 px-4 text-xs font-semibold tracking-widest text-secondary uppercase text-right">Return (THB)</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border-subtle text-sm md:text-base">
                                 {portAssets.map(a => {
-                                    const value = a.price * a.units;
+                                    const isForeign = portfolio.type === "foreign_stock";
+                                    const fx = isForeign ? parseFloat(currentFxRate) : 1;
+                                    const value = a.price * a.units * fx;
                                     const gain = value - a.costBasis;
                                     const gainPct = a.costBasis > 0 ? (gain / a.costBasis) * 100 : 0;
                                     const isPos = gain >= 0;
@@ -362,7 +426,7 @@ export default function AssetDetail() {
                                                 </div>
                                             </td>
                                             <td className="py-4 px-4 text-right">
-                                                <div className="text-xs text-secondary mb-0.5" title="Average Cost">฿{fmt4(a.costBasis / (a.units || 1))}</div>
+                                                <div className="text-xs text-secondary mb-0.5" title="Average Cost">{isForeign ? '$' : '฿'}{fmt4(a.costBasis / (a.units || 1) / fx)}</div>
                                                 <div className="font-light text-primary flex justify-end items-center gap-1.5 group/price" title="Current Price">
                                                     <button onClick={() => {
                                                         setPriceUpdateParams({ isOpen: true, asset: a });
@@ -370,7 +434,7 @@ export default function AssetDetail() {
                                                     }} className="material-symbols-outlined text-[14px] opacity-0 group-hover/price:opacity-100 text-secondary hover:text-accent transition-opacity cursor-pointer">
                                                         edit
                                                     </button>
-                                                    ฿{fmt4(a.price)}
+                                                    {isForeign ? '$' : '฿'}{fmt4(a.price)}
                                                 </div>
                                             </td>
                                             <td className="py-4 px-4 text-right font-light text-primary">{fmt(a.units)}</td>
@@ -437,7 +501,8 @@ export default function AssetDetail() {
                                     </p>
                                     <div className="mt-2 text-sm">
                                       <p className="text-primary font-medium">{isNav ? "" : isPos ? "+" : "-"}฿{fmt(amountField)}</p>
-                                      {t.pricePerUnit && <p className="text-[11px] text-secondary mt-0.5">@ ฿{fmt4(t.pricePerUnit)} per unit</p>}
+                                      {t.pricePerUnit && <p className="text-[11px] text-secondary mt-0.5">@ {portfolio.type === 'foreign_stock' ? '$' : '฿'}{fmt4(t.pricePerUnit)} per unit</p>}
+                                      {t.exchangeRate && <p className="text-[10px] text-accent mt-0.5 italic">FX: {t.exchangeRate}</p>}
                                     </div>
                                     {t.units ? <p className="text-[11px] text-accent mt-0.5">{isPos ? '+' : '-'}{fmt(t.units)} Units</p> : null}
                                     {t.note && <p className="text-secondary text-[10px] mt-2 italic px-2 py-1 bg-bg-subtle border-l-2 border-border-subtle">"{t.note}"</p>}
@@ -573,7 +638,7 @@ export default function AssetDetail() {
                         </div>
 
                         <form onSubmit={handleAssetTxSubmit} className="p-6 space-y-6">
-                            <div className="grid grid-cols-2 gap-4">
+                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 <div>
                                     <label className="text-xs font-semibold text-secondary uppercase tracking-widest mb-2 block">Units</label>
                                     <input type="number" required step="0.0001" min="0.0001" value={assetTxUnits} onChange={e => setAssetTxUnits(e.target.value)} className="w-full bg-bg-subtle border border-border-subtle rounded-xl px-4 py-3 text-lg font-medium text-primary focus:outline-none focus:ring-2 focus:ring-accent transition-shadow" placeholder="0.0000" autoFocus />
@@ -582,15 +647,21 @@ export default function AssetDetail() {
                                     )}
                                 </div>
                                 <div>
-                                    <label className="text-xs font-semibold text-secondary uppercase tracking-widest mb-2 block">Unit Price (฿)</label>
+                                    <label className="text-xs font-semibold text-secondary uppercase tracking-widest mb-2 block">Unit Price ({portfolio.type === 'foreign_stock' ? '$' : '฿'})</label>
                                     <input type="number" required step="0.0001" min="0.0001" value={assetTxPrice} onChange={e => setAssetTxPrice(e.target.value)} className="w-full bg-bg-subtle border border-border-subtle rounded-xl px-4 py-3 text-lg font-medium text-primary focus:outline-none focus:ring-2 focus:ring-accent transition-shadow" placeholder="0.0000" />
                                 </div>
+                                {portfolio.type === "foreign_stock" && (
+                                    <div>
+                                        <label className="text-xs font-semibold text-secondary uppercase tracking-widest mb-2 block">Exchange Rate</label>
+                                        <input type="number" required step="0.01" value={assetTxExchangeRate} onChange={e => setAssetTxExchangeRate(e.target.value)} className="w-full bg-bg-subtle border border-border-subtle rounded-xl px-4 py-3 text-lg font-medium text-primary focus:outline-none focus:ring-2 focus:ring-accent transition-shadow" placeholder="35.00" />
+                                    </div>
+                                )}
                             </div>
 
                             <div>
                                 <div className="flex justify-between text-sm mb-2">
                                     <span className="text-secondary">Estimated Total:</span>
-                                    <span className="text-primary font-medium">฿{fmt((parseFloat(assetTxUnits) || 0) * (parseFloat(assetTxPrice) || 0))}</span>
+                                    <span className="text-primary font-medium">฿{fmt((parseFloat(assetTxUnits) || 0) * (parseFloat(assetTxPrice) || 0) * (portfolio.type === 'foreign_stock' ? (parseFloat(assetTxExchangeRate) || 35) : 1))}</span>
                                 </div>
                                 {assetTxParams.type === 'buy' && (
                                     <p className="text-xs text-secondary flex items-center gap-1">
@@ -639,7 +710,7 @@ export default function AssetDetail() {
 
                         <form onSubmit={handlePriceUpdateSubmit} className="p-6 space-y-6">
                             <div>
-                                <label className="text-xs font-semibold text-secondary uppercase tracking-widest mb-2 block">New Current Price (฿)</label>
+                                <label className="text-xs font-semibold text-secondary uppercase tracking-widest mb-2 block">New Current Price ({portfolio.type === 'foreign_stock' ? '$' : '฿'})</label>
                                 <input type="number" required step="0.0001" min="0.0001" value={newPriceInput} onChange={e => setNewPriceInput(e.target.value)} className="w-full bg-bg-subtle border border-border-subtle rounded-xl px-4 py-3 text-lg font-medium text-primary focus:outline-none focus:ring-2 focus:ring-accent transition-shadow" placeholder="0.0000" autoFocus />
                             </div>
 

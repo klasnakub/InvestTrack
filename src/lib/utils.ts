@@ -1,6 +1,6 @@
 import { Transaction, Asset } from "@/store/PortfolioContext";
 
-export function computePortStats(portfolioId: string, txs: Transaction[], assets: Asset[] = []) {
+export function computePortStats(portfolioId: string, txs: Transaction[], assets: Asset[] = [], fxRate?: number) {
     const portTxs = txs.filter(t => t.portfolioId === portfolioId).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const portAssets = assets.filter(a => a.portfolioId === portfolioId);
 
@@ -18,14 +18,21 @@ export function computePortStats(portfolioId: string, txs: Transaction[], assets
             cashBalance -= t.amount;
             totalUnits -= (t.units || 0);
         } else if (t.type === "buy") {
+            // t.amount is already in THB
             cashBalance -= t.amount;
         } else if (t.type === "sell") {
-            // amount is the total returned cash from sell
+            // t.amount is already in THB
             cashBalance += t.amount;
         }
     });
 
-    const totalAssetValue = portAssets.reduce((sum, a) => sum + (a.units * a.price), 0);
+    // For foreign_stock, a.price is in USD, so we multiply by fxRate to get THB
+    const totalAssetValue = portAssets.reduce((sum, a) => {
+        const assetValueInOriginalCurrency = a.units * a.price;
+        const assetValueInThb = fxRate ? assetValueInOriginalCurrency * fxRate : assetValueInOriginalCurrency;
+        return sum + assetValueInThb;
+    }, 0);
+    
     const totalAssetCost = portAssets.reduce((sum, a) => sum + a.costBasis, 0);
 
     const currentValue = cashBalance + totalAssetValue;
@@ -33,7 +40,7 @@ export function computePortStats(portfolioId: string, txs: Transaction[], assets
 
     const gain = currentValue - costBasis;
     const navPerUnit = totalUnits > 0 ? currentValue / totalUnits : 10;
-    const gainPct = ((navPerUnit - 10) / 10) * 100;
+    const gainPct = costBasis > 0 ? (gain / costBasis) * 100 : 0;
 
     return {
         currentValue,

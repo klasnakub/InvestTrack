@@ -9,6 +9,7 @@ export interface Portfolio {
     id: string;
     name: string;
     type: PortfolioType;
+    currentExchangeRate?: number; // 1 USD = X THB
     createdAt: number;
 }
 
@@ -18,9 +19,9 @@ export interface Asset {
     symbol: string;
     name: string;
     category: string;
-    price: number;
+    price: number; // For foreign_stock, this is in USD
     units: number;
-    costBasis: number;
+    costBasis: number; // Always in THB
     createdAt: number;
 }
 
@@ -29,10 +30,11 @@ export interface Transaction {
     portfolioId: string;
     assetId?: string;
     type: "buy" | "sell" | "nav_update" | "deposit" | "withdraw";
-    amount: number;
+    amount: number; // Always in THB
     units?: number;
-    pricePerUnit?: number;
-    currentValue: number;
+    pricePerUnit?: number; // In asset currency (USD for foreign_stock)
+    exchangeRate?: number; // 1 Foreign Currency = X THB
+    currentValue: number; // Always in THB
     note: string;
     date: string;
     createdAt: number;
@@ -43,6 +45,7 @@ interface PortfolioContextType {
     transactions: Transaction[];
     assets: Asset[];
     addPortfolio: (name: string, type: PortfolioType) => Promise<void>;
+    updatePortfolio: (portfolio: Portfolio) => Promise<void>;
     removePortfolio: (id: string) => Promise<void>;
     addTransaction: (tx: Omit<Transaction, "id" | "createdAt">) => Promise<void>;
     removeTransaction: (id: string) => Promise<void>;
@@ -75,6 +78,11 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     const addPortfolio = useCallback(async (name: string, type: PortfolioType) => {
         const newPort = await actions.addPortfolioDb(name, type);
         setPortfolios(prev => [...prev, newPort]);
+    }, []);
+
+    const updatePortfolio = useCallback(async (portfolio: Portfolio) => {
+        await actions.updatePortfolioDb(portfolio);
+        setPortfolios(prev => prev.map(p => p.id === portfolio.id ? portfolio : p));
     }, []);
 
     const removePortfolio = useCallback(async (id: string) => {
@@ -132,6 +140,7 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
             transactions, 
             assets, 
             addPortfolio, 
+            updatePortfolio,
             removePortfolio, 
             addTransaction, 
             removeTransaction, 

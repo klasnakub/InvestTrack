@@ -7,7 +7,7 @@ import Link from "next/link";
 export default function Dashboard() {
   const { portfolios, transactions, assets, resetData } = usePortfolio();
 
-  const portStats = portfolios.map(p => ({ ...p, ...computePortStats(p.id, transactions, assets) }));
+  const portStats = portfolios.map(p => ({ ...p, ...computePortStats(p.id, transactions, assets, p.type === 'foreign_stock' ? (p.currentExchangeRate || 35) : undefined) }));
   const totalNAV = portStats.reduce((s, p) => s + p.currentValue, 0);
   const totalCost = portStats.reduce((s, p) => s + p.costBasis, 0);
   const totalGain = totalNAV - totalCost;
