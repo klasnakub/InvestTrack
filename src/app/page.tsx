@@ -1,7 +1,7 @@
 "use client";
 
 import { usePortfolio } from "@/store/PortfolioContext";
-import { computePortStats, fmt, fmtPct } from "@/lib/utils";
+import { computePortStats, fmt, fmt4, fmtPct } from "@/lib/utils";
 import Link from "next/link";
 
 export default function Dashboard() {
@@ -104,7 +104,7 @@ export default function Dashboard() {
                     <div>
                       <p className="font-medium text-primary">{p.name}</p>
                       <p className="text-xs text-secondary">
-                        {fmt(p.totalUnits)} Units @ ฿{fmt(p.navPerUnit)}
+                        {fmt(p.totalUnits)} Units @ ฿{fmt4(p.navPerUnit)}
                         <span className="mx-1.5 opacity-50">•</span>
                         {getPercentage(p.currentValue).toFixed(1)}% of portfolio
                       </p>
@@ -113,7 +113,7 @@ export default function Dashboard() {
                   <div className="text-right">
                     <p className="font-medium text-primary">฿{fmt(p.currentValue)}</p>
                     <p className={`text-xs font-medium ${p.gainPct >= 0 ? "text-accent" : "text-danger"}`}>
-                      {fmtPct(p.gainPct)}
+                      {p.gain >= 0 ? "+" : "-"}฿{fmt(Math.abs(p.gain))} ({fmtPct(p.gainPct)})
                     </p>
                   </div>
                 </div>
@@ -148,16 +148,20 @@ export default function Dashboard() {
           <div>
             <h3 className="text-sm font-medium text-secondary uppercase mb-4 tracking-wide">Recent Transactions</h3>
             <div className="border-l border-border-subtle pl-4 space-y-4">
-              {transactions.slice(0, 4).map((t, idx) => {
+              {transactions.filter(t => t.type !== "nav_update").slice(0, 4).map((t, idx) => {
                 const isPos = !["sell", "withdraw"].includes(t.type);
                 const isNav = t.type === "nav_update";
                 const p = portfolios.find(x => x.id === t.portfolioId);
                 const color = isNav ? "bg-gray-300" : isPos ? "bg-accent" : "bg-danger";
 
+                const asset = assets.find(a => a.id === t.assetId);
+
                 return (
                   <div key={t.id} className="relative">
                     <div className={`absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full ${color} border-2 border-bg-main`}></div>
-                    <p className="text-sm font-medium text-primary">{t.type} {p?.name}</p>
+                    <p className="text-sm font-medium text-primary capitalize">
+                      {t.type} {asset ? <span className="text-accent">{asset.symbol}</span> : p?.name}
+                    </p>
                     <p className="text-xs text-secondary mt-0.5">
                       {new Date(t.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })},{" "}
                       <span className={isPos && !isNav ? "text-accent" : isNav ? "text-secondary" : "text-danger"}>

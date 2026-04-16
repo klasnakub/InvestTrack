@@ -29,6 +29,8 @@ export async function getInitialData() {
         createdAt: new Date(t.created_at).getTime(),
         amount: Number(t.amount),
         units: t.units ? Number(t.units) : undefined,
+        assetId: t.asset_id,
+        pricePerUnit: t.price_per_unit ? Number(t.price_per_unit) : undefined,
         currentValue: Number(t.current_value),
         date: new Date(t.date).toISOString().split('T')[0],
       })) as Transaction[],
@@ -59,9 +61,9 @@ export async function removePortfolioDb(id: string) {
 // Transaction Actions
 export async function addTransactionDb(tx: Omit<Transaction, "id" | "createdAt" | "portfolioId"> & { portfolioId: string }) {
   const [result] = await sql`
-    INSERT INTO transactions (portfolio_id, type, amount, units, current_value, note, date)
-    VALUES (${tx.portfolioId}, ${tx.type}, ${tx.amount}, ${tx.units}, ${tx.currentValue}, ${tx.note}, ${tx.date})
-    RETURNING id, portfolio_id as "portfolioId", type, amount, units, current_value as "currentValue", note, date, created_at as "createdAt"
+    INSERT INTO transactions (portfolio_id, asset_id, type, amount, units, price_per_unit, current_value, note, date)
+    VALUES (${tx.portfolioId}, ${tx.assetId}, ${tx.type}, ${tx.amount}, ${tx.units}, ${tx.pricePerUnit}, ${tx.currentValue}, ${tx.note}, ${tx.date})
+    RETURNING id, portfolio_id as "portfolioId", asset_id as "assetId", type, amount, units, price_per_unit as "pricePerUnit", current_value as "currentValue", note, date, created_at as "createdAt"
   `;
   return {
     ...result,

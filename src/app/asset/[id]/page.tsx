@@ -1,7 +1,7 @@
 "use client";
 
 import { usePortfolio } from "@/store/PortfolioContext";
-import { computePortStats, fmt, fmtPct, txIcons, txLabels, uid, today } from "@/lib/utils";
+import { computePortStats, fmt, fmt4, fmtPct, txIcons, txLabels, uid, today } from "@/lib/utils";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
@@ -52,47 +52,79 @@ export default function AssetDetail() {
     }
 
     const stats = computePortStats(portfolio.id, transactions, assets);
-    const portTxs = transactions.filter(t => t.portfolioId === portfolio.id).sort((a, b) => b.createdAt - a.createdAt);
+    const portTxs = transactions
+        .filter(t => t.portfolioId === portfolio.id && t.type !== "nav_update")
+        .sort((a, b) => b.createdAt - a.createdAt);
     const portAssets = assets.filter(a => a.portfolioId === portfolio.id);
 
-    const handleAddAsset = (e: React.FormEvent) => {
+    const handleAddAsset = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!assetForm.symbol || !assetForm.currentPrice || !assetForm.costPrice || !assetForm.units) return setErrorModal({ isOpen: true, title: "Missing Fields", message: "Please fill in all required fields." });
 
         const currentPrice = parseFloat(assetForm.currentPrice) || 0;
         const costPrice = parseFloat(assetForm.costPrice) || 0;
         const units = parseFloat(assetForm.units) || 0;
-        const costBasis = costPrice * units;
+        const totalCost = costPrice * units;
         const symbol = assetForm.symbol.toUpperCase();
 
-        if (costBasis > stats.cashBalance) {
+        if (totalCost > stats.cashBalance) {
             setErrorModal({
                 isOpen: true,
                 title: "Insufficient Cash",
-                message: `You do not have enough cash to complete this transaction. Available cash: ฿${fmt(stats.cashBalance)}. Required: ฿${fmt(costBasis)}.`
+                message: `You do not have enough cash to complete this transaction. Available cash: ฿${fmt(stats.cashBalance)}. Required: ฿${fmt(totalCost)}.`
             });
             return;
         }
 
-        addAsset({
-            portfolioId: portfolio.id,
-            symbol: symbol,
-            name: assetForm.name || symbol,
-            category: assetForm.category || 'Other',
-            price: currentPrice,
-            units: units,
-            costBasis: costBasis,
-        });
+        const existingAsset = portAssets.find(a => a.symbol === symbol);
 
-        addTransaction({
-            portfolioId: portfolio.id,
-            type: "buy",
-            amount: costBasis,
-            units: units,
-            currentValue: stats.currentValue,
-            note: `Bought ${fmt(units)} units of ${symbol}`,
-            date: today(),
-        });
+        if (existingAsset) {
+            // Update existing asset with weighted average
+            const newUnits = existingAsset.units + units;
+            const newCostBasis = existingAsset.costBasis + totalCost;
+            
+            await updateAsset({
+                ...existingAsset,
+                units: newUnits,
+                costBasis: newCostBasis,
+                price: currentPrice
+            });
+
+            await addTransaction({
+                portfolioId: portfolio.id,
+                assetId: existingAsset.id,
+                type: "buy",
+                amount: totalCost,
+                units: units,
+                pricePerUnit: costPrice,
+                currentValue: stats.currentValue,
+                note: `Bought ${fmt(units)} units of ${symbol} (Update existing)`,
+                date: today(),
+            });
+        } else {
+            // Create new asset
+            const newAsset = await addAsset({
+                portfolioId: portfolio.id,
+                symbol: symbol,
+                name: assetForm.name || symbol,
+                category: assetForm.category || 'Other',
+                price: currentPrice,
+                units: units,
+                costBasis: totalCost,
+            });
+
+            await addTransaction({
+                portfolioId: portfolio.id,
+                assetId: (newAsset as any)?.id,
+                type: "buy",
+                amount: totalCost,
+                units: units,
+                pricePerUnit: costPrice,
+                currentValue: stats.currentValue,
+                note: `Bought ${fmt(units)} units of ${symbol}`,
+                date: today(),
+            });
+        }
 
         setAssetForm({ symbol: "", name: "", category: "", currentPrice: "", costPrice: "", units: "" });
         setIsAddingAsset(false);
@@ -164,9 +196,11 @@ export default function AssetDetail() {
 
             addTransaction({
                 portfolioId: portfolio.id,
+                assetId: asset.id,
                 type: "buy",
                 amount: totalValue,
                 units: units,
+                pricePerUnit: price,
                 currentValue: stats.currentValue,
                 note: `Bought ${fmt(units)} units of ${asset.symbol} @ ฿${fmt(price)}`,
                 date: assetTxDate,
@@ -184,9 +218,11 @@ export default function AssetDetail() {
 
             addTransaction({
                 portfolioId: portfolio.id,
+                assetId: asset.id,
                 type: "sell",
                 amount: totalValue,
                 units: units,
+                pricePerUnit: price,
                 currentValue: stats.currentValue,
                 note: `Sold ${fmt(units)} units of ${asset.symbol} @ ฿${fmt(price)}`,
                 date: assetTxDate,
@@ -251,7 +287,7 @@ export default function AssetDetail() {
                                 Units: <span className="text-primary font-medium">{fmt(stats.totalUnits)}</span>
                             </div>
                             <div className="bg-bg-subtle px-3 py-1.5 rounded border border-border-subtle text-secondary">
-                                NAV: <span className="text-primary font-medium">฿{fmt(stats.navPerUnit)}</span>
+                                NAV: <span className="text-primary font-medium">฿{fmt4(stats.navPerUnit)}</span>
                             </div>
                             <div className="bg-bg-subtle px-3 py-1.5 rounded border border-border-subtle text-secondary">
                                 Cash: <span className="text-primary font-medium">฿{fmt(stats.cashBalance)}</span>
@@ -289,9 +325,9 @@ export default function AssetDetail() {
                             <div><label className="text-xs text-secondary uppercase mb-1 block">Symbol *</label><input required value={assetForm.symbol} onChange={e => setAssetForm({ ...assetForm, symbol: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="e.g. PTT" /></div>
                             <div><label className="text-xs text-secondary uppercase mb-1 block">Name</label><input value={assetForm.name} onChange={e => setAssetForm({ ...assetForm, name: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="e.g. PTT PCL" /></div>
                             <div><label className="text-xs text-secondary uppercase mb-1 block">Category</label><input value={assetForm.category} onChange={e => setAssetForm({ ...assetForm, category: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="e.g. Energy" /></div>
-                            <div><label className="text-xs text-secondary uppercase mb-1 block">Cost Price (ต้นทุน) *</label><input required type="number" step="0.01" value={assetForm.costPrice} onChange={e => setAssetForm({ ...assetForm, costPrice: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="0.00" /></div>
-                            <div><label className="text-xs text-secondary uppercase mb-1 block">Current Price (ปัจจุบัน) *</label><input required type="number" step="0.01" value={assetForm.currentPrice} onChange={e => setAssetForm({ ...assetForm, currentPrice: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="0.00" /></div>
-                            <div><label className="text-xs text-secondary uppercase mb-1 block">Units *</label><input required type="number" step="0.01" value={assetForm.units} onChange={e => setAssetForm({ ...assetForm, units: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="0.00" /></div>
+                            <div><label className="text-xs text-secondary uppercase mb-1 block">Cost Price (ต้นทุน) *</label><input required type="number" step="0.0001" value={assetForm.costPrice} onChange={e => setAssetForm({ ...assetForm, costPrice: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="0.0000" /></div>
+                            <div><label className="text-xs text-secondary uppercase mb-1 block">Current Price (ปัจจุบัน) *</label><input required type="number" step="0.0001" value={assetForm.currentPrice} onChange={e => setAssetForm({ ...assetForm, currentPrice: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="0.0000" /></div>
+                            <div><label className="text-xs text-secondary uppercase mb-1 block">Units *</label><input required type="number" step="0.0001" value={assetForm.units} onChange={e => setAssetForm({ ...assetForm, units: e.target.value })} className="w-full bg-bg-main border border-border-subtle rounded-md px-3 py-2 text-sm" placeholder="0.0000" /></div>
                             <div className="md:col-span-2 lg:col-span-3 flex justify-end mt-2"><button type="submit" className="bg-accent text-white px-4 py-2 rounded-md text-sm font-medium">Save Asset</button></div>
                         </form>
                     )}
@@ -326,7 +362,7 @@ export default function AssetDetail() {
                                                 </div>
                                             </td>
                                             <td className="py-4 px-4 text-right">
-                                                <div className="text-xs text-secondary mb-0.5" title="Average Cost">฿{fmt(a.costBasis / (a.units || 1))}</div>
+                                                <div className="text-xs text-secondary mb-0.5" title="Average Cost">฿{fmt4(a.costBasis / (a.units || 1))}</div>
                                                 <div className="font-light text-primary flex justify-end items-center gap-1.5 group/price" title="Current Price">
                                                     <button onClick={() => {
                                                         setPriceUpdateParams({ isOpen: true, asset: a });
@@ -334,14 +370,14 @@ export default function AssetDetail() {
                                                     }} className="material-symbols-outlined text-[14px] opacity-0 group-hover/price:opacity-100 text-secondary hover:text-accent transition-opacity cursor-pointer">
                                                         edit
                                                     </button>
-                                                    ฿{fmt(a.price)}
+                                                    ฿{fmt4(a.price)}
                                                 </div>
                                             </td>
                                             <td className="py-4 px-4 text-right font-light text-primary">{fmt(a.units)}</td>
                                             <td className="py-4 px-4 text-right font-medium text-primary">฿{fmt(value)}</td>
                                             <td className="py-4 px-4 text-right">
                                                 <span className={`font-medium ${isPos ? "text-accent" : "text-danger"}`}>
-                                                    {isPos ? "+" : ""}{fmtPct(gainPct)}
+                                                    {fmtPct(gainPct)}
                                                     <br />
                                                     <span className="text-xs opacity-70">({isPos ? "+" : "-"}฿{fmt(Math.abs(gain))})</span>
                                                 </span>
@@ -383,6 +419,7 @@ export default function AssetDetail() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         {portTxs.map(t => {
+                            const asset = assets.find(a => a.id === t.assetId);
                             const isPos = !["sell", "withdraw"].includes(t.type);
                             const isNav = t.type === "nav_update";
                             const iconColor = isNav ? "text-primary" : isPos ? "text-accent" : "text-danger";
@@ -394,12 +431,16 @@ export default function AssetDetail() {
                                         <span className={`material-symbols-outlined ${iconColor} text-xl`}>{txIcons[t.type as keyof typeof txIcons]}</span>
                                         <span className="text-xs text-secondary">{new Date(t.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
                                     </div>
-                                    <p className="text-primary font-medium">{txLabels[t.type as keyof typeof txLabels]}</p>
-                                    <p className="text-secondary text-sm mt-1">{isNav ? "" : isPos ? "+" : "-"}฿{fmt(amountField)}</p>
-                                    {t.units ? <p className="text-xs text-accent mt-0.5">{t.type === 'deposit' ? '+' : '-'}{fmt(t.units)} Units</p> : null}
-                                    {t.note && <p className="text-secondary text-xs mt-2 italic">"{t.note}"</p>}
-
-
+                                    <p className="text-primary font-medium">
+                                        {txLabels[t.type as keyof typeof txLabels]}
+                                        {asset && <span className="ml-2 text-accent">({asset.symbol})</span>}
+                                    </p>
+                                    <div className="mt-2 text-sm">
+                                      <p className="text-primary font-medium">{isNav ? "" : isPos ? "+" : "-"}฿{fmt(amountField)}</p>
+                                      {t.pricePerUnit && <p className="text-[11px] text-secondary mt-0.5">@ ฿{fmt4(t.pricePerUnit)} per unit</p>}
+                                    </div>
+                                    {t.units ? <p className="text-[11px] text-accent mt-0.5">{isPos ? '+' : '-'}{fmt(t.units)} Units</p> : null}
+                                    {t.note && <p className="text-secondary text-[10px] mt-2 italic px-2 py-1 bg-bg-subtle border-l-2 border-border-subtle">"{t.note}"</p>}
                                 </div>
                             );
                         })}
@@ -452,7 +493,7 @@ export default function AssetDetail() {
                                     <input
                                         type="number"
                                         required
-                                        step="0.01"
+                                        step="0.0001"
                                         min="0.01"
                                         value={txAmount}
                                         onChange={e => setTxAmount(e.target.value)}
@@ -535,14 +576,14 @@ export default function AssetDetail() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-xs font-semibold text-secondary uppercase tracking-widest mb-2 block">Units</label>
-                                    <input type="number" required step="0.01" min="0.01" value={assetTxUnits} onChange={e => setAssetTxUnits(e.target.value)} className="w-full bg-bg-subtle border border-border-subtle rounded-xl px-4 py-3 text-lg font-medium text-primary focus:outline-none focus:ring-2 focus:ring-accent transition-shadow" placeholder="0.00" autoFocus />
+                                    <input type="number" required step="0.0001" min="0.0001" value={assetTxUnits} onChange={e => setAssetTxUnits(e.target.value)} className="w-full bg-bg-subtle border border-border-subtle rounded-xl px-4 py-3 text-lg font-medium text-primary focus:outline-none focus:ring-2 focus:ring-accent transition-shadow" placeholder="0.0000" autoFocus />
                                     {assetTxParams.type === 'sell' && (
                                         <p className="text-xs text-secondary mt-2">Max: {fmt(assetTxParams.asset.units)} units</p>
                                     )}
                                 </div>
                                 <div>
                                     <label className="text-xs font-semibold text-secondary uppercase tracking-widest mb-2 block">Unit Price (฿)</label>
-                                    <input type="number" required step="0.01" min="0.01" value={assetTxPrice} onChange={e => setAssetTxPrice(e.target.value)} className="w-full bg-bg-subtle border border-border-subtle rounded-xl px-4 py-3 text-lg font-medium text-primary focus:outline-none focus:ring-2 focus:ring-accent transition-shadow" placeholder="0.00" />
+                                    <input type="number" required step="0.0001" min="0.0001" value={assetTxPrice} onChange={e => setAssetTxPrice(e.target.value)} className="w-full bg-bg-subtle border border-border-subtle rounded-xl px-4 py-3 text-lg font-medium text-primary focus:outline-none focus:ring-2 focus:ring-accent transition-shadow" placeholder="0.0000" />
                                 </div>
                             </div>
 
@@ -599,7 +640,7 @@ export default function AssetDetail() {
                         <form onSubmit={handlePriceUpdateSubmit} className="p-6 space-y-6">
                             <div>
                                 <label className="text-xs font-semibold text-secondary uppercase tracking-widest mb-2 block">New Current Price (฿)</label>
-                                <input type="number" required step="0.01" min="0.01" value={newPriceInput} onChange={e => setNewPriceInput(e.target.value)} className="w-full bg-bg-subtle border border-border-subtle rounded-xl px-4 py-3 text-lg font-medium text-primary focus:outline-none focus:ring-2 focus:ring-accent transition-shadow" placeholder="0.00" autoFocus />
+                                <input type="number" required step="0.0001" min="0.0001" value={newPriceInput} onChange={e => setNewPriceInput(e.target.value)} className="w-full bg-bg-subtle border border-border-subtle rounded-xl px-4 py-3 text-lg font-medium text-primary focus:outline-none focus:ring-2 focus:ring-accent transition-shadow" placeholder="0.0000" autoFocus />
                             </div>
 
                             <div>

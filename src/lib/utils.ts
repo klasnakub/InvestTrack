@@ -49,6 +49,7 @@ export function computePortStats(portfolioId: string, txs: Transaction[], assets
 }
 
 export function fmt(n: number) { return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+export function fmt4(n: number) { return n.toLocaleString("th-TH", { minimumFractionDigits: 4, maximumFractionDigits: 4 }); }
 export function fmtPct(n: number) { return (n >= 0 ? "+" : "") + n.toFixed(2) + "%"; }
 export function uid() { return Math.random().toString(36).slice(2, 10); }
 export function today() { return new Date().toISOString().split("T")[0]; }

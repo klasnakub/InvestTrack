@@ -27,9 +27,11 @@ export interface Asset {
 export interface Transaction {
     id: string;
     portfolioId: string;
+    assetId?: string;
     type: "buy" | "sell" | "nav_update" | "deposit" | "withdraw";
     amount: number;
     units?: number;
+    pricePerUnit?: number;
     currentValue: number;
     note: string;
     date: string;
@@ -44,7 +46,7 @@ interface PortfolioContextType {
     removePortfolio: (id: string) => Promise<void>;
     addTransaction: (tx: Omit<Transaction, "id" | "createdAt">) => Promise<void>;
     removeTransaction: (id: string) => Promise<void>;
-    addAsset: (asset: Omit<Asset, "id" | "createdAt">) => Promise<void>;
+    addAsset: (asset: Omit<Asset, "id" | "createdAt">) => Promise<Asset>;
     updateAsset: (asset: Asset) => Promise<void>;
     removeAsset: (id: string) => Promise<void>;
     updateAssetPrice: (id: string, price: number) => Promise<void>;
@@ -95,6 +97,7 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     const addAsset = useCallback(async (asset: Omit<Asset, "id" | "createdAt">) => {
         const newAsset = await actions.addAssetDb(asset);
         setAssets(prev => [...prev, newAsset]);
+        return newAsset;
     }, []);
 
     const updateAsset = useCallback(async (asset: Asset) => {
