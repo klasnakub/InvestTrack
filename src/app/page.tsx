@@ -13,6 +13,15 @@ export default function Dashboard() {
   const totalGain = totalNAV - totalCost;
   const totalGainPct = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
 
+  const referenceWealth = 1179741;
+  const growthAmount = totalNAV - referenceWealth;
+  const growthPct = (growthAmount / referenceWealth) * 100;
+
+  const depositStartDate = new Date("2026-04-16T00:00:00");
+  const cumulativeDeposits = transactions
+    .filter(t => t.type === "deposit" && new Date(t.date + "T00:00:00") >= depositStartDate)
+    .reduce((sum, t) => sum + t.amount, 0);
+
   const portIcons: Record<string, string> = {
     th_stock: "trending_up",
     foreign_stock: "public",
@@ -29,7 +38,7 @@ export default function Dashboard() {
           <div>
             <p className="text-sm font-medium text-secondary mb-2 uppercase tracking-wide">Total Net Worth</p>
             <h1 className="text-5xl md:text-6xl font-display font-light text-primary tracking-tight">
-              ฿{fmt(Math.floor(totalNAV))}
+              ฿{Math.floor(totalNAV).toLocaleString("th-TH")}
               <span className="text-2xl text-gray-300 font-light">
                 .{Math.floor((totalNAV % 1) * 100).toString().padStart(2, '0')}
               </span>
@@ -84,6 +93,7 @@ export default function Dashboard() {
           </div>
         </div>
       </section>
+      
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
         <div className="lg:col-span-2">
@@ -180,6 +190,43 @@ export default function Dashboard() {
       </div>
 
 
+
+      {/* Wealth Growth Section */}
+      <section className="mt-16 bg-bg-subtle border border-border-subtle rounded-3xl p-8 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-accent/5 blur-[100px] -mr-32 -mt-32 rounded-full"></div>
+        
+        <div className="relative z-10">
+          <div className="flex items-center gap-2 mb-8">
+            <span className="material-symbols-outlined text-accent text-xl">insights</span>
+            <h2 className="text-xl font-display font-medium text-primary">Growth of Money</h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+            <div>
+              <p className="text-xs text-secondary uppercase tracking-wider mb-2">Growth Since Jan 11, 2026</p>
+              <div className="flex items-baseline gap-2">
+                <p className="text-3xl font-display text-primary">
+                  ฿{Math.floor(growthAmount).toLocaleString("th-TH")}
+                  <span className="text-base text-gray-300">.{Math.floor((Math.abs(growthAmount) % 1) * 100).toString().padStart(2, '0')}</span>
+                </p>
+                <p className={`text-sm font-medium ${growthAmount >= 0 ? "text-accent" : "text-danger"}`}>
+                  ({fmtPct(growthPct)})
+                </p>
+              </div>
+              <p className="text-xs text-secondary mt-1 italic">Compared to baseline ฿1,179,741</p>
+            </div>
+
+            <div className="md:border-l md:border-border-subtle md:pl-12">
+              <p className="text-xs text-secondary uppercase tracking-wider mb-2">Cumulative Deposits</p>
+              <p className="text-3xl font-display text-primary">
+                ฿{Math.floor(cumulativeDeposits).toLocaleString("th-TH")}
+                <span className="text-base text-gray-300">.{Math.floor((cumulativeDeposits % 1) * 100).toString().padStart(2, '0')}</span>
+              </p>
+              <p className="text-xs text-secondary mt-1">Investments added since Apr 16, 2026</p>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

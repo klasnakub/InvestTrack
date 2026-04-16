@@ -2,6 +2,7 @@
 
 import { usePortfolio } from "@/store/PortfolioContext";
 import { computePortStats, fmt, fmt4, fmtPct, txIcons, txLabels, uid, today } from "@/lib/utils";
+import * as actions from "@/lib/actions";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
@@ -30,10 +31,13 @@ export default function AssetDetail() {
     const [assetTxPrice, setAssetTxPrice] = useState("");
     const [assetTxExchangeRate, setAssetTxExchangeRate] = useState("");
     const [assetTxDate, setAssetTxDate] = useState("");
-
     const [priceUpdateParams, setPriceUpdateParams] = useState<{ isOpen: boolean; asset: typeof assets[0] | null }>({ isOpen: false, asset: null });
     const [newPriceInput, setNewPriceInput] = useState("");
     const [priceUpdateDate, setPriceUpdateDate] = useState("");
+
+    const [isUpdatingAll, setIsUpdatingAll] = useState(false);
+    const [autoUpdateResults, setAutoUpdateResults] = useState<{ symbol: string; oldPrice: number; newPrice: number; assetId: string }[]>([]);
+    const [isAutoUpdateModalOpen, setIsAutoUpdateModalOpen] = useState(false);
 
     const portfolio = portfolios.find(p => p.id === resolvedParams);
 
@@ -287,6 +291,86 @@ export default function AssetDetail() {
         setNewPriceInput("");
     };
 
+    const handleAutoUpdatePrices = async () => {
+        if (!portfolio) return;
+        setIsUpdatingAll(true);
+        const results: { symbol: string; oldPrice: number; newPrice: number; assetId: string }[] = [];
+        let errorOccurred = false;
+
+        try {
+            if (portfolio.type === "th_stock" || portfolio.type === "foreign_stock") {
+                for (const asset of portAssets) {
+                    // Small delay to prevent rate limiting
+                    await new Promise(resolve => setTimeout(resolve, 200));
+
+                    let searchSymbol = asset.symbol;
+                    if (portfolio.type === "th_stock" && !searchSymbol.toUpperCase().endsWith(".BK")) {
+                        searchSymbol = searchSymbol + ".BK";
+                    }
+                    
+                    const res = await actions.fetchStockPrice(searchSymbol);
+                    if (res.success && res.price) {
+                        results.push({ symbol: asset.symbol, oldPrice: asset.price, newPrice: res.price, assetId: asset.id });
+                    } else {
+                        errorOccurred = true;
+                    }
+                }
+            } else if (portfolio.type === "gold") {
+                const res = await actions.fetchGoldPrice();
+                if (res.success && res.sellPrice) {
+                    for (const asset of portAssets) {
+                        results.push({ symbol: asset.symbol, oldPrice: asset.price, newPrice: res.sellPrice, assetId: asset.id });
+                    }
+                } else {
+                    errorOccurred = true;
+                }
+            }
+
+            if (results.length > 0) {
+                setAutoUpdateResults(results);
+                setIsAutoUpdateModalOpen(true);
+            } else if (errorOccurred) {
+                setErrorModal({ isOpen: true, title: "Update Failed", message: "Failed to fetch prices for assets. Please check your symbols and connection." });
+            }
+        } catch (err) {
+            setErrorModal({ isOpen: true, title: "Error", message: "An unexpected error occurred during the update." });
+        } finally {
+            setIsUpdatingAll(false);
+        }
+    };
+
+    const confirmAutoUpdate = async () => {
+        const newTotalValueBase = stats.currentValue;
+        let cumulativeDiff = 0;
+
+        for (const item of autoUpdateResults) {
+            const asset = assets.find(a => a.id === item.assetId);
+            if (asset) {
+                const isForeign = portfolio?.type === "foreign_stock";
+                const fx = isForeign ? (portfolio.currentExchangeRate || 35) : 1;
+                const diffValue = (item.newPrice - item.oldPrice) * asset.units * fx;
+                cumulativeDiff += diffValue;
+
+                await actions.updateAssetPriceDb(item.assetId, item.newPrice);
+            }
+        }
+
+        const finalTotalValue = newTotalValueBase + cumulativeDiff;
+        
+        // Add one summary transaction for the update
+        await actions.addTransactionDb({
+            portfolioId: portfolio!.id,
+            type: "nav_update",
+            amount: 0,
+            currentValue: finalTotalValue,
+            note: `Auto-updated prices for ${autoUpdateResults.length} assets`,
+            date: today(),
+        });
+
+        // Refresh Data
+        window.location.reload(); 
+    };
+
     return (
         <div className="flex-1 flex justify-center px-6 md:px-12 py-8">
             <div className="w-full max-w-6xl flex flex-col gap-12">
@@ -374,9 +458,23 @@ export default function AssetDetail() {
                                 </div>
                             )}
                         </div>
-                        <button onClick={() => setIsAddingAsset(!isAddingAsset)} className="text-sm font-medium text-bg-main bg-primary px-3 py-1.5 rounded-md hover:opacity-80">
-                            {isAddingAsset ? "Cancel" : "+ Add Asset"}
-                        </button>
+                        <div className="flex items-center gap-3">
+                            { (portfolio.type === "th_stock" || portfolio.type === "foreign_stock" || portfolio.type === "gold") && (
+                                <button 
+                                    onClick={handleAutoUpdatePrices} 
+                                    disabled={isUpdatingAll || portAssets.length === 0}
+                                    className="flex items-center gap-2 text-sm font-medium text-primary bg-bg-subtle border border-border-subtle px-3 py-1.5 rounded-md hover:bg-bg-main transition-colors disabled:opacity-50"
+                                >
+                                    <span className={`material-symbols-outlined text-[18px] ${isUpdatingAll ? 'animate-spin' : ''}`}>
+                                        {isUpdatingAll ? 'sync' : 'magic_button'}
+                                    </span>
+                                    {isUpdatingAll ? "Updating..." : "Auto Update"}
+                                </button>
+                            )}
+                            <button onClick={() => setIsAddingAsset(!isAddingAsset)} className="text-sm font-medium text-bg-main bg-primary px-3 py-1.5 rounded-md hover:opacity-80">
+                                {isAddingAsset ? "Cancel" : "+ Add Asset"}
+                            </button>
+                        </div>
                     </div>
 
                     {isAddingAsset && (
@@ -736,14 +834,84 @@ export default function AssetDetail() {
                     <div className="relative w-full max-w-sm bg-bg-main border border-border-subtle rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                         <div className="px-6 py-5 border-b border-border-subtle flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full flex items-center justify-center bg-[rgba(239,68,68,0.1)] text-danger">
-                                <span className="material-symbols-outlined text-xl">warning</span>
+                                <span className="material-symbols-outlined text-xl">error</span>
                             </div>
-                            <h3 className="text-lg font-medium text-primary">{errorModal.title}</h3>
+                            <h3 className="text-lg font-medium text-primary text-danger">{errorModal.title}</h3>
                         </div>
                         <div className="p-6">
                             <p className="text-secondary text-sm leading-relaxed">{errorModal.message}</p>
                             <button onClick={() => setErrorModal({ ...errorModal, isOpen: false })} className="mt-6 w-full py-2.5 rounded-xl text-sm font-medium bg-bg-subtle text-primary border border-border-subtle hover:bg-bg-subtle/80 transition-colors">
                                 Understood
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Auto Update Confirmation Modal */}
+            {isAutoUpdateModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsAutoUpdateModalOpen(false)}></div>
+                    <div className="relative w-full max-w-lg bg-bg-main border border-border-subtle rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="px-8 py-6 border-b border-border-subtle flex items-center justify-between bg-bg-subtle/30">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-accent/10 text-accent flex items-center justify-center shadow-inner">
+                                    <span className="material-symbols-outlined text-2xl">update</span>
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-display font-medium text-primary">Confirm Price Update</h3>
+                                    <p className="text-xs text-secondary mt-0.5 tracking-wide uppercase">Review market data before saving</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsAutoUpdateModalOpen(false)} className="w-10 h-10 rounded-full hover:bg-bg-subtle flex items-center justify-center text-secondary transition-colors">
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+
+                        <div className="px-8 py-6 max-h-[60vh] overflow-y-auto">
+                            <div className="space-y-4">
+                                {autoUpdateResults.map((item, idx) => {
+                                    const diff = item.newPrice - item.oldPrice;
+                                    const diffPct = (diff / item.oldPrice) * 100;
+                                    return (
+                                        <div key={idx} className="flex items-center justify-between p-4 rounded-2xl bg-bg-subtle/50 border border-border-subtle hover:border-accent/30 transition-colors">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-xl bg-bg-main border border-border-subtle flex items-center justify-center font-bold text-accent text-xs">
+                                                    {item.symbol.slice(0, 3)}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-semibold text-primary">{item.symbol}</p>
+                                                    <p className="text-[10px] text-secondary uppercase tracking-tighter">Market Ticker</p>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="flex items-center justify-end gap-3">
+                                                    <span className="text-xs text-secondary line-through opacity-50">{fmt(item.oldPrice)}</span>
+                                                    <span className="material-symbols-outlined text-xs text-secondary opacity-30">arrow_forward</span>
+                                                    <span className="text-lg font-display font-medium text-primary">{fmt(item.newPrice)}</span>
+                                                </div>
+                                                <span className={`text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded ${diff >= 0 ? 'text-accent bg-accent/10' : 'text-danger bg-danger/10'}`}>
+                                                    {diff >= 0 ? '+' : ''}{diffPct.toFixed(2)}%
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div className="px-8 py-6 bg-bg-subtle/30 border-t border-border-subtle flex gap-4">
+                            <button 
+                                onClick={() => setIsAutoUpdateModalOpen(false)}
+                                className="flex-1 py-3.5 rounded-2xl text-sm font-medium text-secondary hover:bg-bg-subtle transition-colors border border-border-subtle"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={confirmAutoUpdate}
+                                className="flex-1 py-3.5 rounded-2xl text-sm font-medium text-white bg-accent hover:opacity-90 shadow-lg shadow-accent/20 transition-all active:scale-[0.98]"
+                            >
+                                Save All Changes
                             </button>
                         </div>
                     </div>

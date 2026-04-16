@@ -125,6 +125,42 @@ export async function removeAssetDb(id: string) {
   await sql`DELETE FROM assets WHERE id = ${id}`;
 }
 
+
 export async function resetAllDataDb() {
   await sql`TRUNCATE portfolios, assets, transactions CASCADE`;
+}
+
+// Price Fetching Actions
+export async function fetchStockPrice(symbol: string) {
+  try {
+    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    const data = await res.json();
+    const price = data.chart?.result?.[0]?.meta?.regularMarketPrice;
+    if (price === undefined) throw new Error("Price not found");
+    return { success: true, price: Number(price) };
+  } catch (error) {
+    console.error(`Failed to fetch stock price for ${symbol}:`, error);
+    return { success: false, error: "Failed to fetch price" };
+  }
+}
+
+export async function fetchGoldPrice() {
+  try {
+    const res = await fetch("https://api.chnwt.dev/thai-gold-api/latest");
+    const data = await res.json();
+    if (data.status === "success") {
+      // We'll use gold bar sell price as it's the most common benchmark
+      const sellPrice = parseFloat(data.response.price.gold_bar.sell.replace(/,/g, ''));
+      const buyPrice = parseFloat(data.response.price.gold_bar.buy.replace(/,/g, ''));
+      return { success: true, sellPrice, buyPrice };
+    }
+    throw new Error("Invalid response from gold API");
+  } catch (error) {
+    console.error("Failed to fetch gold price:", error);
+    return { success: false, error: "Failed to fetch gold price" };
+  }
 }
