@@ -17,9 +17,9 @@ export default function Dashboard() {
   const growthAmount = totalNAV - referenceWealth;
   const growthPct = (growthAmount / referenceWealth) * 100;
 
-  const depositStartDate = new Date("2026-04-16T00:00:00");
+  const depositStartDate = "2026-04-16";
   const cumulativeDeposits = transactions
-    .filter(t => t.type === "deposit" && new Date(t.date + "T00:00:00") >= depositStartDate)
+    .filter(t => t.type === "deposit" && t.date > depositStartDate)
     .reduce((sum, t) => sum + t.amount, 0);
 
   const portIcons: Record<string, string> = {
@@ -222,7 +222,7 @@ export default function Dashboard() {
                 ฿{Math.floor(cumulativeDeposits).toLocaleString("th-TH")}
                 <span className="text-base text-gray-300">.{Math.floor((cumulativeDeposits % 1) * 100).toString().padStart(2, '0')}</span>
               </p>
-              <p className="text-xs text-secondary mt-1">Investments added since Apr 16, 2026</p>
+              <p className="text-xs text-secondary mt-1">Investments added after Apr 16, 2026</p>
             </div>
           </div>
         </div>

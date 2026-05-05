@@ -8,7 +8,7 @@ export async function getInitialData() {
   try {
     const portfoliosRaw = await sql`SELECT * FROM portfolios ORDER BY created_at ASC`;
     const assetsRaw = await sql`SELECT * FROM assets ORDER BY created_at ASC`;
-    const transactionsRaw = await sql`SELECT * FROM transactions ORDER BY created_at DESC`;
+    const transactionsRaw = await sql`SELECT *, date::text AS date_text FROM transactions ORDER BY created_at DESC`;
 
     return {
       portfolios: portfoliosRaw.map(p => ({
@@ -34,7 +34,7 @@ export async function getInitialData() {
         pricePerUnit: t.price_per_unit ? Number(t.price_per_unit) : undefined,
         exchangeRate: t.exchange_rate ? Number(t.exchange_rate) : undefined,
         currentValue: Number(t.current_value),
-        date: new Date(t.date).toISOString().split('T')[0],
+        date: t.date_text,
       })) as Transaction[],
     };
   } catch (error) {
@@ -74,7 +74,7 @@ export async function addTransactionDb(tx: Omit<Transaction, "id" | "createdAt" 
   const [result] = await sql`
     INSERT INTO transactions (portfolio_id, asset_id, type, amount, units, price_per_unit, exchange_rate, current_value, note, date)
     VALUES (${tx.portfolioId}, ${tx.assetId}, ${tx.type}, ${tx.amount}, ${tx.units}, ${tx.pricePerUnit}, ${tx.exchangeRate}, ${tx.currentValue}, ${tx.note}, ${tx.date})
-    RETURNING id, portfolio_id as "portfolioId", asset_id as "assetId", type, amount, units, price_per_unit as "pricePerUnit", exchange_rate as "exchangeRate", current_value as "currentValue", note, date, created_at as "createdAt"
+    RETURNING id, portfolio_id as "portfolioId", asset_id as "assetId", type, amount, units, price_per_unit as "pricePerUnit", exchange_rate as "exchangeRate", current_value as "currentValue", note, date::text as date, created_at as "createdAt"
   `;
   return {
     ...result,
@@ -84,7 +84,7 @@ export async function addTransactionDb(tx: Omit<Transaction, "id" | "createdAt" 
     pricePerUnit: result.pricePerUnit ? Number(result.pricePerUnit) : undefined,
     exchangeRate: result.exchangeRate ? Number(result.exchangeRate) : undefined,
     currentValue: Number(result.currentValue),
-    date: new Date(result.date).toISOString().split('T')[0],
+    date: result.date,
   } as Transaction;
 }
 
